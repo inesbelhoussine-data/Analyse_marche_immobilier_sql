@@ -6,7 +6,7 @@ Ce projet consiste à concevoir et exploiter une **base de données relationnell
 
 L'objectif est de transformer des données immobilières brutes en une base PostgreSQL structurée, fiable et exploitable afin de répondre à différentes problématiques d'analyse du marché immobilier.
 
-Le projet couvre ainsi l'ensemble du processus allant de la préparation des données jusqu'à leur analyse avec SQL.
+Le projet couvre l'ensemble du processus, depuis la préparation et la modélisation des données jusqu'à leur intégration dans PostgreSQL et leur analyse avec SQL.
 
 ---
 
@@ -14,10 +14,10 @@ Le projet couvre ainsi l'ensemble du processus allant de la préparation des don
 
 Ce projet a permis de :
 
-- analyser et préparer plusieurs jeux de données immobilières et géographiques ;
+- analyser et préparer des données immobilières, géographiques et démographiques ;
 - nettoyer les données avant leur intégration ;
-- concevoir un modèle relationnel ;
-- appliquer les principes de normalisation des bases de données ;
+- concevoir un modèle relationnel normalisé ;
+- structurer les données autour de plusieurs entités métier ;
 - créer des clés primaires et étrangères ;
 - créer et alimenter une base de données PostgreSQL ;
 - vérifier l'intégrité et la qualité des données importées ;
@@ -37,10 +37,16 @@ Elles contiennent notamment :
 - les types de biens ;
 - les surfaces ;
 - le nombre de pièces ;
-- les informations géographiques ;
+- les informations d'adresse ;
+- les codes postaux ;
 - les communes concernées.
 
-Des données géographiques et démographiques complémentaires sont également utilisées afin d'intégrer notamment les informations de **région** et de **population**.
+Ces données ont été complétées par des informations géographiques et démographiques permettant notamment d'intégrer :
+
+- la **région** ;
+- la **population municipale** ;
+- la **population comptée à part** ;
+- la **population totale**.
 
 ---
 
@@ -57,63 +63,120 @@ Les principales étapes de préparation comprennent :
 - harmonisation des formats ;
 - préparation des différentes entités ;
 - création des identifiants nécessaires ;
-- export des données nettoyées au format CSV.
+- export des données préparées au format CSV.
 
-Un identifiant de commune est notamment construit à partir de la concaténation du **code département** et du **code commune**.
+Un identifiant de commune a notamment été construit à partir de la concaténation du **code département** et du **code commune** :
 
 ```text
 code_departement + code_commune → id_codedep_codecommune
 ```
 
-Les identifiants des biens et des ventes permettent quant à eux d'assurer l'unicité des enregistrements.
+Cet identifiant permet de relier les biens immobiliers à leur commune.
 
 ---
 
 ## 🗃️ Modélisation de la base
 
-La base a été conçue selon un modèle relationnel afin de limiter la redondance des données et de garantir leur cohérence.
+La base de données est organisée autour de **quatre tables principales** :
 
-Les principales entités sont :
+### 🌍 Region
 
-### Commune
+La table `region` contient les régions françaises.
 
-Contient les informations géographiques et démographiques nécessaires aux analyses territoriales.
+Principales informations :
 
-### Bien
+- `id_region` : identifiant unique de la région ;
+- `nom_region` : nom de la région.
 
-Contient les caractéristiques propres aux biens immobiliers :
+Une région peut être associée à plusieurs communes.
 
-- localisation ;
+---
+
+### 🏙️ Commune
+
+La table `commune` contient les informations géographiques et démographiques relatives aux communes.
+
+Principales informations :
+
+- `id_codedep_codecommune` : identifiant unique de la commune ;
+- `id_region` : région à laquelle appartient la commune ;
+- `code_departement` ;
+- `code_commune` ;
+- `nom_commune` ;
+- `pmun` : population municipale ;
+- `pcap` : population comptée à part ;
+- `ptot` : population totale.
+
+La clé étrangère `id_region` permet de relier chaque commune à sa région.
+
+---
+
+### 🏡 Bien
+
+La table `bien` contient les caractéristiques des biens immobiliers.
+
+Elle comprend notamment :
+
+- `id_bien` : identifiant unique du bien ;
+- `id_codedep_codecommune` : commune du bien ;
+- numéro et type de voie ;
+- voie ;
+- code postal ;
 - type de local ;
-- surface ;
 - nombre de pièces ;
-- adresse.
+- surface réelle bâtie ;
+- surface du terrain.
 
-### Vente
+Chaque bien est rattaché à une commune grâce à une clé étrangère.
 
-Contient les informations relatives aux transactions immobilières :
+---
 
-- date de mutation ;
-- valeur foncière ;
-- bien concerné.
+### 💰 Vente
 
-### Relations principales
+La table `vente` contient les informations relatives aux transactions immobilières.
+
+Elle comprend notamment :
+
+- `id_vente` : identifiant unique de la transaction ;
+- `id_bien` : bien concerné par la transaction ;
+- `date_mutation` : date de la vente ;
+- `valeur_fonciere` : montant de la transaction.
+
+Chaque vente est associée à un bien immobilier.
+
+---
+
+## 🔗 Relations entre les tables
+
+Le modèle relationnel suit la structure suivante :
 
 ```text
+REGION
+   │
+   │ 1:N
+   ▼
 COMMUNE
    │
    │ 1:N
    ▼
-  BIEN
+ BIEN
    │
    │ 1:N
    ▼
- VENTE
+VENTE
 ```
+
+Les relations permettent ainsi de naviguer de la transaction immobilière jusqu'à son contexte géographique :
+
+**Vente → Bien → Commune → Région**
+
+Une région peut contenir plusieurs communes.
 
 Une commune peut contenir plusieurs biens.
 
-Un bien appartient à une commune et peut faire l'objet de plusieurs transactions au cours du temps.
+Un bien peut être associé à plusieurs transactions immobilières au cours du temps.
+
+Cette organisation permet de limiter la redondance des informations tout en facilitant les analyses géographiques.
 
 ---
 
@@ -127,12 +190,34 @@ La cohérence de la base est assurée grâce à l'utilisation de :
 - contrôles des doublons ;
 - contrôles des données orphelines.
 
-Plusieurs requêtes SQL ont été réalisées après l'import afin de vérifier que l'ensemble des données avait correctement été chargé.
+Les principales relations sont :
+
+```text
+commune.id_region
+    → region.id_region
+
+bien.id_codedep_codecommune
+    → commune.id_codedep_codecommune
+
+vente.id_bien
+    → bien.id_bien
+```
+
+---
+
+## ✅ Contrôle du chargement des données
+
+Après l'import dans PostgreSQL, plusieurs requêtes ont été réalisées afin de vérifier le bon chargement des données.
 
 Exemple de contrôle des volumes :
 
 ```sql
-SELECT 'commune' AS table_name, COUNT(*) AS nb_lignes
+SELECT 'region' AS table_name, COUNT(*) AS nb_lignes
+FROM region
+
+UNION ALL
+
+SELECT 'commune', COUNT(*)
 FROM commune
 
 UNION ALL
@@ -146,43 +231,51 @@ SELECT 'vente', COUNT(*)
 FROM vente;
 ```
 
+Des contrôles supplémentaires ont également permis de vérifier :
+
+- l'absence de doublons sur les clés primaires ;
+- l'intégrité des clés étrangères ;
+- l'absence de données orphelines ;
+- la cohérence des relations entre les tables.
+
 ---
 
 ## 🔍 Analyses SQL
 
-Une fois la base opérationnelle, différentes requêtes ont été développées afin d'étudier le marché immobilier.
+Une fois la base créée, chargée et contrôlée, différentes requêtes SQL ont été développées afin d'étudier le marché immobilier.
 
 Les analyses portent notamment sur :
 
-- le volume des transactions ;
-- la répartition géographique des ventes ;
-- les appartements et maisons vendus ;
+- le volume des transactions immobilières ;
+- la répartition des ventes par région ;
+- les ventes d'appartements et de maisons ;
 - les valeurs foncières ;
 - les prix au m² ;
 - les différences entre territoires ;
-- les évolutions du marché sur la période étudiée ;
-- les indicateurs liés à la population.
+- l'évolution du marché immobilier ;
+- les analyses prenant en compte la population des communes.
 
-Les requêtes utilisent notamment :
+Les requêtes mobilisent notamment :
 
-- `JOIN` et `LEFT JOIN`
-- `GROUP BY`
-- `ORDER BY`
-- `COUNT()`
-- `SUM()`
-- `AVG()`
-- `ROUND()`
-- `CASE WHEN`
-- sous-requêtes
-- CTE (`WITH`)
+- `JOIN` et `LEFT JOIN` ;
+- `WHERE` ;
+- `GROUP BY` ;
+- `ORDER BY` ;
+- `COUNT()` ;
+- `SUM()` ;
+- `AVG()` ;
+- `ROUND()` ;
+- `CASE WHEN` ;
+- sous-requêtes ;
+- CTE (`WITH`).
 
 ---
 
-## ✅ Contrôle de la qualité des données
+## 🧪 Contrôle de la qualité des données
 
-Plusieurs contrôles ont été réalisés avant l'analyse :
+Plusieurs contrôles ont été réalisés avant l'exploitation de la base :
 
-- comparaison du nombre de lignes avant et après import ;
+- comparaison des volumes après import ;
 - vérification de l'unicité des clés primaires ;
 - contrôle des clés étrangères ;
 - recherche de données orphelines ;
@@ -190,21 +283,23 @@ Plusieurs contrôles ont été réalisés avant l'analyse :
 - contrôle des valeurs nulles ;
 - vérification de la cohérence des types de données.
 
-Ces vérifications permettent de s'assurer que les résultats des analyses reposent sur une base fiable.
+Ces vérifications permettent de s'assurer que les analyses reposent sur une base structurée et cohérente.
 
 ---
 
 ## 💾 Sauvegarde et reproductibilité
 
-Les éléments nécessaires à la reproduction du projet sont conservés :
+Les différents éléments nécessaires à la reproduction du projet sont conservés dans le repository :
 
 - scripts de création de la base ;
-- requêtes SQL ;
+- requêtes de contrôle d'intégrité ;
+- requêtes d'analyse SQL ;
 - données préparées ;
 - dictionnaire de données ;
-- schéma relationnel.
+- schéma relationnel ;
+- présentation du projet.
 
-PostgreSQL permet également de sauvegarder une base à l'aide d'outils tels que `pg_dump`.
+PostgreSQL permet également de réaliser une sauvegarde complète de la base à l'aide d'outils tels que `pg_dump`.
 
 ---
 
@@ -212,20 +307,22 @@ PostgreSQL permet également de sauvegarder une base à l'aide d'outils tels que
 
 Les données utilisées proviennent de jeux de données publics relatifs au marché immobilier.
 
-Le principe de **minimisation des données** est appliqué en ne conservant que les variables nécessaires aux analyses.
+Le principe de **minimisation des données** est appliqué en conservant uniquement les variables nécessaires aux analyses.
 
 Aucune donnée directement nominative telle qu'un nom, un prénom, une adresse e-mail ou un numéro de téléphone n'est utilisée dans les analyses.
 
 ---
 
-## 🛠️ Technologies
+## 🛠️ Technologies utilisées
 
 - **SQL**
 - **PostgreSQL**
 - **DBeaver**
 - **Excel**
-- **Git / GitHub**
+- **Git**
+- **GitHub**
 
+---
 
 ## 🧠 Compétences développées
 
@@ -234,19 +331,22 @@ Ce projet m'a permis de renforcer mes compétences en :
 - conception et modélisation de bases de données relationnelles ;
 - SQL ;
 - PostgreSQL ;
-- nettoyage et préparation de données ;
+- préparation et nettoyage de données ;
 - création et gestion de clés primaires et étrangères ;
 - jointures SQL ;
 - agrégations ;
 - CTE et sous-requêtes ;
 - contrôle de l'intégrité référentielle ;
 - analyse de données immobilières ;
+- analyse géographique et démographique ;
 - documentation d'une base de données.
 
 ---
 
 ## 🚀 Conclusion
 
-Ce projet m'a permis de mettre en pratique l'ensemble du processus de création d'une base de données analytique : **préparation des données, modélisation, création de la base, contrôle de l'intégrité et exploitation avec SQL**.
+Ce projet m'a permis de mettre en pratique l'ensemble du processus de création et d'exploitation d'une base de données relationnelle : **préparation des données, modélisation, création de la base PostgreSQL, contrôle de l'intégrité et analyses SQL**.
 
-Il m'a également permis de consolider ma compréhension de la modélisation relationnelle et de développer une approche plus rigoureuse du contrôle de la qualité des données avant toute analyse.
+La structuration des données autour des tables **Region, Commune, Bien et Vente** permet d'analyser les transactions immobilières tout en intégrant leurs dimensions géographiques et démographiques.
+
+Ce projet m'a également permis de consolider ma maîtrise de **SQL et PostgreSQL**, ainsi que ma compréhension de la modélisation relationnelle et des contrôles de qualité indispensables avant toute analyse de données.
